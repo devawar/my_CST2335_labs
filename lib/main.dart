@@ -22,7 +22,7 @@ class MyAppState extends State<MyApp> {
               alignment: Alignment.topRight,
               child: Icon(Icons.favorite, color: Colors.red),
             ),
-          ],
+          ], 
         ),
         Text(title),
         Text(subtitle),
