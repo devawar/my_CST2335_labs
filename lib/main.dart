@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:encrypted_shared_preferences/encrypted_shared_preferences.dart';
+import 'DataRepository.dart';
+import 'ProfilePage.dart';
 
 void main() {
   runApp(const MyApp());
@@ -11,10 +14,15 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const MyHomePage(title: 'Flutter Demo Home Page'),
+        '/profilePage': (context) => ProfilePage(),
+      },
     );
   }
 }
@@ -30,12 +38,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
 
-  // Lab 1 variables
-  var _counter = 0.0;
-  var myFontSize = 30.0;
-  var _myFontStyle = TextStyle(fontSize: 30.0);
-
-  // Lab 2 variables
   late TextEditingController _loginController;
   late TextEditingController _passwordController;
   var imageSource = "images/question-mark.png";
@@ -45,6 +47,27 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     _loginController = TextEditingController();
     _passwordController = TextEditingController();
+
+    DataRepository.loadData();
+
+    EncryptedSharedPreferences prefs = EncryptedSharedPreferences();
+    prefs.getString("LoginName").then((savedLogin) {
+      if (savedLogin.isNotEmpty) {
+        prefs.getString("Password").then((savedPassword) {
+          setState(() {
+            _loginController.text = savedLogin;
+            _passwordController.text = savedPassword;
+          });
+
+          Future.delayed(Duration.zero, () {
+            final snackBar = SnackBar(
+              content: Text('Previous login name and password have been loaded'),
+            );
+            ScaffoldMessenger.of(context).showSnackBar(snackBar);
+          });
+        });
+      }
+    });
   }
 
   @override
@@ -52,22 +75,6 @@ class _MyHomePageState extends State<MyHomePage> {
     _loginController.dispose();
     _passwordController.dispose();
     super.dispose();
-  }
-
-  void _setNewValue(double value) {
-    setState(() {
-      _counter = value;
-      myFontSize = value;
-      _myFontStyle = TextStyle(fontSize: myFontSize);
-    });
-  }
-
-  void _incrementCounter() {
-    setState(() {
-      if (_counter < 99) {
-        _counter++;
-      }
-    });
   }
 
   void _loginClicked() {
@@ -78,6 +85,65 @@ class _MyHomePageState extends State<MyHomePage> {
         imageSource = "images/stop-sign.png";
       }
     });
+
+    showDialog<String>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Save Credentials'),
+        content: const Text('Would you like to save your username and password?'),
+        actions: <Widget>[
+          ElevatedButton(
+            onPressed: () {
+              EncryptedSharedPreferences prefs = EncryptedSharedPreferences();
+              prefs.setString("LoginName", _loginController.value.text);
+              prefs.setString("Password", _passwordController.value.text);
+              Navigator.pop(context);
+
+              if (_passwordController.value.text == "ASDF") {
+                DataRepository.loginName = _loginController.value.text;
+                final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(context);
+
+                Future.delayed(Duration(seconds: 1), () {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text("Welcome Back ${_loginController.value.text}")),
+                  );
+                });
+
+                Future.delayed(Duration(seconds: 3), () {
+                  navigator.pushNamed('/profilePage');
+                });
+              }
+            },
+            child: Text('Yes'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              EncryptedSharedPreferences prefs = EncryptedSharedPreferences();
+              prefs.clear();
+              Navigator.pop(context);
+
+              if (_passwordController.value.text == "ASDF") {
+                DataRepository.loginName = _loginController.value.text;
+                final messenger = ScaffoldMessenger.of(context);
+                final navigator = Navigator.of(context);
+
+                Future.delayed(Duration(seconds: 1), () {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text("Welcome Back ${_loginController.value.text}")),
+                  );
+                });
+
+                Future.delayed(Duration(seconds: 3), () {
+                  navigator.pushNamed('/profilePage');
+                });
+              }
+            },
+            child: Text('No'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -92,12 +158,6 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
 
-            // Lab 1 widgets
-            Text('You have pushed the button this many times:', style: _myFontStyle),
-            Text('$_counter', style: _myFontStyle),
-            Slider(value: _counter, max: 100.0, onChanged: _setNewValue, min: 0.0),
-
-            // Lab 2 widgets
             Padding(
               padding: EdgeInsets.all(16.0),
               child: TextField(
@@ -138,11 +198,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
