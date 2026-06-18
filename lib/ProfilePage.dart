@@ -45,6 +45,8 @@ class ProfilePageState extends State<ProfilePage> {
 
   void _launchURL(String url) {
     final uri = Uri.parse(url);
+    launchUrl(uri);
+    /*
     canLaunchUrl(uri).then((itCan) {
       if (itCan) {
         launchUrl(uri);
@@ -67,7 +69,7 @@ class ProfilePageState extends State<ProfilePage> {
           },
         );
       }
-    });
+    });*/
   }
 
   @override
