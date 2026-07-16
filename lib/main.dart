@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:encrypted_shared_preferences/encrypted_shared_preferences.dart';
+import 'database.dart';
+import 'shopping_item.dart';
+import 'shopping_dao.dart';
 
 void main() {
   runApp(const MyApp());
@@ -11,98 +13,165 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Shopping List',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
+  const MyHomePage({super.key});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  // List to hold shopping items loaded from / synced with the database
+  List<ShoppingItem> items = [];
 
-  late TextEditingController _loginController;
-  late TextEditingController _passwordController;
-  var imageSource = "images/question-mark.png";
+  late AppDatabase database;
+  late ShoppingDao shoppingDao;
+  int nextId = 0;
+
+  // Controllers for the two TextFields
+  final TextEditingController _itemController = TextEditingController();
+  final TextEditingController _quantityController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loginController = TextEditingController();
-    _passwordController = TextEditingController();
-
-    // Load saved credentials on startup
-    EncryptedSharedPreferences prefs = EncryptedSharedPreferences();
-    prefs.getString("LoginName").then((savedLogin) {
-      if (savedLogin.isNotEmpty) {
-        prefs.getString("Password").then((savedPassword) {
-          setState(() {
-            _loginController.text = savedLogin;
-            _passwordController.text = savedPassword;
-          });
-
-          Future.delayed(Duration.zero, () {
-            final snackBar = SnackBar(
-              content: Text('Previous login name and password have been loaded'),
-            );
-            ScaffoldMessenger.of(context).showSnackBar(snackBar);
-          });
+    $FloorAppDatabase.databaseBuilder('shopping_database.db').build().then((db) {
+      database = db;
+      shoppingDao = database.shoppingDao;
+      shoppingDao.findAllItems().then((loadedItems) {
+        setState(() {
+          items = loadedItems;
+          if (items.isNotEmpty) {
+            nextId = items.map((i) => i.id).reduce((a, b) => a > b ? a : b) + 1;
+          }
         });
-      }
+      });
     });
   }
 
-  @override
-  void dispose() {
-    _loginController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
+  // ListPage function — returns the full list UI
+  Widget ListPage() {
+    return Column(
+      children: [
+        // Row at the top: Item TextField, Quantity TextField, Add button
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _itemController,
+                  decoration: const InputDecoration(
+                    labelText: 'Item name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 100,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _quantityController,
+                  decoration: const InputDecoration(
+                    labelText: 'Qty',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              child: const Text("Add"),
+              onPressed: () {
+                ShoppingItem newItem = ShoppingItem(
+                  nextId,
+                  _itemController.value.text,
+                  _quantityController.value.text,
+                );
+                nextId++;
+                shoppingDao.insertItem(newItem);
+                setState(() {
+                  items.add(newItem);
+                  _itemController.text = "";
+                  _quantityController.text = "";
+                });
+              },
+            ),
+          ],
+        ),
 
-  void _loginClicked() {
-    setState(() {
-      if (_passwordController.value.text == "ASDF") {
-        imageSource = "images/light-bulb.png";
-      } else {
-        imageSource = "images/stop-sign.png";
-      }
-    });
-
-    showDialog<String>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Save Credentials'),
-        content: const Text('Would you like to save your username and password?'),
-        actions: <Widget>[
-          ElevatedButton(
-            onPressed: () {
-              EncryptedSharedPreferences prefs = EncryptedSharedPreferences();
-              prefs.setString("LoginName", _loginController.value.text);
-              prefs.setString("Password", _passwordController.value.text);
-              Navigator.pop(context);
+        // Show empty message / the ListView
+        items.isEmpty
+            ? const Padding(
+          padding: EdgeInsets.all(20.0),
+          child: Text("There are no items in the list"),
+        )
+            : Expanded(
+          child: ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, rowNum) {
+              return GestureDetector(
+                onLongPress: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) {
+                      return AlertDialog(
+                        title: const Text("Delete Item"),
+                        content: Text(
+                            "Do you want to delete '${items[rowNum].name}'?"),
+                        actions: [
+                          TextButton(
+                            child: const Text("Yes"),
+                            onPressed: () {
+                              shoppingDao.deleteItem(items[rowNum]);
+                              setState(() {
+                                items.removeAt(rowNum);
+                              });
+                              Navigator.pop(context);
+                            },
+                          ),
+                          TextButton(
+                            child: const Text("No"),
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text("${rowNum + 1}. ${items[rowNum].name}"),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text("Qty: ${items[rowNum].quantity}"),
+                    ),
+                  ],
+                ),
+              );
             },
-            child: Text('Yes'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              EncryptedSharedPreferences prefs = EncryptedSharedPreferences();
-              prefs.clear();
-              Navigator.pop(context);
-            },
-            child: Text('No'),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -111,54 +180,9 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
+        title: const Text("Shopping List"),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _loginController,
-                decoration: InputDecoration(
-                  labelText: "Login name",
-                  hintText: "Enter your login name",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: "Password",
-                  hintText: "Enter your password",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: ElevatedButton(
-                onPressed: _loginClicked,
-                child: Text("Login"),
-              ),
-            ),
-
-            Semantics(
-              label: 'Image showing login result: question mark, light bulb, or stop sign',
-              child: Image.asset(imageSource, width: 300, height: 300),
-            ),
-
-          ],
-        ),
-      ),
+      body: ListPage(),
     );
   }
 }
