@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'database.dart';
+import 'shopping_item.dart';
+import 'shopping_dao.dart';
 
 void main() {
   runApp(const MyApp());
@@ -28,12 +31,33 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  // List to hold shopping items: each item is a Map with 'name' and 'quantity'
-  List<Map<String, String>> items = [];
+  // List to hold shopping items loaded from / synced with the database
+  List<ShoppingItem> items = [];
+
+  late AppDatabase database;
+  late ShoppingDao shoppingDao;
+  int nextId = 0;
 
   // Controllers for the two TextFields
   final TextEditingController _itemController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    $FloorAppDatabase.databaseBuilder('shopping_database.db').build().then((db) {
+      database = db;
+      shoppingDao = database.shoppingDao;
+      shoppingDao.findAllItems().then((loadedItems) {
+        setState(() {
+          items = loadedItems;
+          if (items.isNotEmpty) {
+            nextId = items.map((i) => i.id).reduce((a, b) => a > b ? a : b) + 1;
+          }
+        });
+      });
+    });
+  }
 
   // ListPage function — returns the full list UI
   Widget ListPage() {
@@ -72,11 +96,15 @@ class _MyHomePageState extends State<MyHomePage> {
             ElevatedButton(
               child: const Text("Add"),
               onPressed: () {
+                ShoppingItem newItem = ShoppingItem(
+                  nextId,
+                  _itemController.value.text,
+                  _quantityController.value.text,
+                );
+                nextId++;
+                shoppingDao.insertItem(newItem);
                 setState(() {
-                  items.add({
-                    'name': _itemController.value.text,
-                    'quantity': _quantityController.value.text,
-                  });
+                  items.add(newItem);
                   _itemController.text = "";
                   _quantityController.text = "";
                 });
@@ -103,11 +131,12 @@ class _MyHomePageState extends State<MyHomePage> {
                       return AlertDialog(
                         title: const Text("Delete Item"),
                         content: Text(
-                            "Do you want to delete '${items[rowNum]['name']}'?"),
+                            "Do you want to delete '${items[rowNum].name}'?"),
                         actions: [
                           TextButton(
                             child: const Text("Yes"),
                             onPressed: () {
+                              shoppingDao.deleteItem(items[rowNum]);
                               setState(() {
                                 items.removeAt(rowNum);
                               });
@@ -130,11 +159,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.all(8.0),
-                      child: Text("${rowNum + 1}. ${items[rowNum]['name']}"),
+                      child: Text("${rowNum + 1}. ${items[rowNum].name}"),
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
-                      child: Text("Qty: ${items[rowNum]['quantity']}"),
+                      child: Text("Qty: ${items[rowNum].quantity}"),
                     ),
                   ],
                 ),
