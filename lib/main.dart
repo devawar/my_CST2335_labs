@@ -38,6 +38,9 @@ class _MyHomePageState extends State<MyHomePage> {
   late ShoppingDao shoppingDao;
   int nextId = 0;
 
+  // Currently selected item for the Details page (null = nothing selected)
+  ShoppingItem? selectedItem;
+
   // Controllers for the two TextFields
   final TextEditingController _itemController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
@@ -124,35 +127,10 @@ class _MyHomePageState extends State<MyHomePage> {
             itemCount: items.length,
             itemBuilder: (context, rowNum) {
               return GestureDetector(
-                onLongPress: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) {
-                      return AlertDialog(
-                        title: const Text("Delete Item"),
-                        content: Text(
-                            "Do you want to delete '${items[rowNum].name}'?"),
-                        actions: [
-                          TextButton(
-                            child: const Text("Yes"),
-                            onPressed: () {
-                              shoppingDao.deleteItem(items[rowNum]);
-                              setState(() {
-                                items.removeAt(rowNum);
-                              });
-                              Navigator.pop(context);
-                            },
-                          ),
-                          TextButton(
-                            child: const Text("No"),
-                            onPressed: () {
-                              Navigator.pop(context);
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  );
+                onTap: () {
+                  setState(() {
+                    selectedItem = items[rowNum];
+                  });
                 },
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -175,6 +153,79 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  // DetailsPage function — shows the selected item's name, quantity, and id
+  Widget DetailsPage() {
+    if (selectedItem == null) {
+      return const Center(child: Text("No item selected"));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Item: ${selectedItem!.name}"),
+          Text("Quantity: ${selectedItem!.quantity}"),
+          Text("Database id: ${selectedItem!.id}"),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              ElevatedButton(
+                child: const Text("Delete"),
+                onPressed: () {
+                  shoppingDao.deleteItem(selectedItem!);
+                  setState(() {
+                    items.remove(selectedItem);
+                    selectedItem = null;
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                child: const Text("Close"),
+                onPressed: () {
+                  setState(() {
+                    selectedItem = null;
+                  });
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // reactiveLayout function — decides tablet/landscape vs phone/portrait layout
+  Widget reactiveLayout() {
+    var size = MediaQuery.of(context).size;
+    var height = size.height;
+    var width = size.width;
+
+    if ((width > height) && (width > 720)) {
+      // Tablet / landscape: show list and details side by side
+      return Row(
+        children: [
+          Expanded(
+            flex: 1,
+            child: ListPage(),
+          ),
+          Expanded(
+            flex: 1,
+            child: DetailsPage(),
+          ),
+        ],
+      );
+    } else {
+      // Phone / portrait: show one or the other
+      if (selectedItem == null) {
+        return ListPage();
+      } else {
+        return DetailsPage();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,7 +233,7 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text("Shopping List"),
       ),
-      body: ListPage(),
+      body: reactiveLayout(),
     );
   }
 }
