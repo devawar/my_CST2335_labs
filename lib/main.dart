@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'database.dart';
+import 'shopping_item.dart';
+import 'shopping_dao.dart';
 
 void main() {
   runApp(const MyApp());
@@ -10,74 +13,217 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Shopping List',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
+  const MyHomePage({super.key});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  // List to hold shopping items loaded from / synced with the database
+  List<ShoppingItem> items = [];
 
-  // Lab 1 variables
-  var _counter = 0.0;
-  var myFontSize = 30.0;
-  var _myFontStyle = TextStyle(fontSize: 30.0);
+  late AppDatabase database;
+  late ShoppingDao shoppingDao;
+  int nextId = 0;
 
-  // Lab 2 variables
-  late TextEditingController _loginController;
-  late TextEditingController _passwordController;
-  var imageSource = "images/question-mark.png";
+  // Currently selected item for the Details page (null = nothing selected)
+  ShoppingItem? selectedItem;
+
+  // Controllers for the two TextFields
+  final TextEditingController _itemController = TextEditingController();
+  final TextEditingController _quantityController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _loginController = TextEditingController();
-    _passwordController = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _loginController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  void _setNewValue(double value) {
-    setState(() {
-      _counter = value;
-      myFontSize = value;
-      _myFontStyle = TextStyle(fontSize: myFontSize);
+    $FloorAppDatabase.databaseBuilder('shopping_database.db').build().then((db) {
+      database = db;
+      shoppingDao = database.shoppingDao;
+      shoppingDao.findAllItems().then((loadedItems) {
+        setState(() {
+          items = loadedItems;
+          if (items.isNotEmpty) {
+            nextId = items.map((i) => i.id).reduce((a, b) => a > b ? a : b) + 1;
+          }
+        });
+      });
     });
   }
 
-  void _incrementCounter() {
-    setState(() {
-      if (_counter < 99) {
-        _counter++;
-      }
-    });
+  // ListPage function — returns the full list UI
+  Widget ListPage() {
+    return Column(
+      children: [
+        // Row at the top: Item TextField, Quantity TextField, Add button
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _itemController,
+                  decoration: const InputDecoration(
+                    labelText: 'Item name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              width: 100,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: _quantityController,
+                  decoration: const InputDecoration(
+                    labelText: 'Qty',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              child: const Text("Add"),
+              onPressed: () {
+                ShoppingItem newItem = ShoppingItem(
+                  nextId,
+                  _itemController.value.text,
+                  _quantityController.value.text,
+                );
+                nextId++;
+                shoppingDao.insertItem(newItem);
+                setState(() {
+                  items.add(newItem);
+                  _itemController.text = "";
+                  _quantityController.text = "";
+                });
+              },
+            ),
+          ],
+        ),
+
+        // Show empty message / the ListView
+        items.isEmpty
+            ? const Padding(
+          padding: EdgeInsets.all(20.0),
+          child: Text("There are no items in the list"),
+        )
+            : Expanded(
+          child: ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, rowNum) {
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    selectedItem = items[rowNum];
+                  });
+                },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text("${rowNum + 1}. ${items[rowNum].name}"),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text("Qty: ${items[rowNum].quantity}"),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
-  void _loginClicked() {
-    setState(() {
-      if (_passwordController.value.text == "ASDF") {
-        imageSource = "images/light-bulb.png";
+  // DetailsPage function — shows the selected item's name, quantity, and id
+  Widget DetailsPage() {
+    if (selectedItem == null) {
+      return const Center(child: Text("No item selected"));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Item: ${selectedItem!.name}"),
+          Text("Quantity: ${selectedItem!.quantity}"),
+          Text("Database id: ${selectedItem!.id}"),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              ElevatedButton(
+                child: const Text("Delete"),
+                onPressed: () {
+                  shoppingDao.deleteItem(selectedItem!);
+                  setState(() {
+                    items.remove(selectedItem);
+                    selectedItem = null;
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                child: const Text("Close"),
+                onPressed: () {
+                  setState(() {
+                    selectedItem = null;
+                  });
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // reactiveLayout function — decides tablet/landscape vs phone/portrait layout
+  Widget reactiveLayout() {
+    var size = MediaQuery.of(context).size;
+    var height = size.height;
+    var width = size.width;
+
+    if ((width > height) && (width > 720)) {
+      // Tablet / landscape: show list and details side by side
+      return Row(
+        children: [
+          Expanded(
+            flex: 1,
+            child: ListPage(),
+          ),
+          Expanded(
+            flex: 1,
+            child: DetailsPage(),
+          ),
+        ],
+      );
+    } else {
+      // Phone / portrait: show one or the other
+      if (selectedItem == null) {
+        return ListPage();
       } else {
-        imageSource = "images/stop-sign.png";
+        return DetailsPage();
       }
-    });
+    }
   }
 
   @override
@@ -85,65 +231,9 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
+        title: const Text("Shopping List"),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-
-            // Lab 1 widgets
-            Text('You have pushed the button this many times:', style: _myFontStyle),
-            Text('$_counter', style: _myFontStyle),
-            Slider(value: _counter, max: 100.0, onChanged: _setNewValue, min: 0.0),
-
-            // Lab 2 widgets
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _loginController,
-                decoration: InputDecoration(
-                  labelText: "Login name",
-                  hintText: "Enter your login name",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: "Password",
-                  hintText: "Enter your password",
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: ElevatedButton(
-                onPressed: _loginClicked,
-                child: Text("Login"),
-              ),
-            ),
-
-            Semantics(
-              label: 'Image showing login result: question mark, light bulb, or stop sign',
-              child: Image.asset(imageSource, width: 300, height: 300),
-            ),
-
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+      body: reactiveLayout(),
     );
   }
 }
